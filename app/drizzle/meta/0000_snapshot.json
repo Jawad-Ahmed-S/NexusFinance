@@ -1,0 +1,1024 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "prevId": "",
+  "version": "5",
+  "dialect": "mysql",
+  "tables": {
+    "accounts": {
+      "name": "accounts",
+      "columns": {
+        "account_id": {
+          "autoincrement": true,
+          "name": "account_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "autoincrement": false,
+          "name": "customer_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_type": {
+          "autoincrement": false,
+          "name": "account_type",
+          "type": "enum('wadi_ah','mudarabah','charity')",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "balance": {
+          "default": "'0.00'",
+          "autoincrement": false,
+          "name": "balance",
+          "type": "decimal(15,2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "default": "'active'",
+          "autoincrement": false,
+          "name": "status",
+          "type": "enum('active','frozen','closed')",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "opened_at": {
+          "default": "(CURRENT_TIMESTAMP)",
+          "autoincrement": false,
+          "name": "opened_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "compositePrimaryKeys": {
+        "accounts_account_id": {
+          "name": "accounts_account_id",
+          "columns": [
+            "account_id"
+          ]
+        }
+      },
+      "indexes": {
+        "customer_id": {
+          "name": "customer_id",
+          "columns": [
+            "customer_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "accounts_ibfk_1": {
+          "name": "accounts_ibfk_1",
+          "tableFrom": "accounts",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "customer_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "chk_balance": {
+          "name": "chk_balance",
+          "value": "(`balance` >= 0)"
+        }
+      }
+    },
+    "churn_signal": {
+      "name": "churn_signal",
+      "columns": {
+        "signal_id": {
+          "autoincrement": true,
+          "name": "signal_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "autoincrement": false,
+          "name": "customer_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transaction_velocity_score": {
+          "autoincrement": false,
+          "name": "transaction_velocity_score",
+          "type": "decimal(8,4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "balance_volatility_score": {
+          "autoincrement": false,
+          "name": "balance_volatility_score",
+          "type": "decimal(8,4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_computed_at": {
+          "default": "(CURRENT_TIMESTAMP)",
+          "autoincrement": false,
+          "name": "last_computed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "compositePrimaryKeys": {
+        "churn_signal_signal_id": {
+          "name": "churn_signal_signal_id",
+          "columns": [
+            "signal_id"
+          ]
+        }
+      },
+      "indexes": {
+        "customer_id": {
+          "name": "customer_id",
+          "columns": [
+            "customer_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "churn_signal_ibfk_1": {
+          "name": "churn_signal_ibfk_1",
+          "tableFrom": "churn_signal",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "customer_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "customers": {
+      "name": "customers",
+      "columns": {
+        "customer_id": {
+          "autoincrement": true,
+          "name": "customer_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "autoincrement": false,
+          "name": "user_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_name": {
+          "autoincrement": false,
+          "name": "full_name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "national_id": {
+          "autoincrement": false,
+          "name": "national_id",
+          "type": "varchar(15)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone": {
+          "autoincrement": false,
+          "name": "phone",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "autoincrement": false,
+          "name": "email",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "default": "(CURRENT_TIMESTAMP)",
+          "autoincrement": false,
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "compositePrimaryKeys": {
+        "customers_customer_id": {
+          "name": "customers_customer_id",
+          "columns": [
+            "customer_id"
+          ]
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "customers_ibfk_1": {
+          "name": "customers_ibfk_1",
+          "tableFrom": "customers",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {
+        "email": {
+          "name": "email",
+          "columns": [
+            "email"
+          ]
+        },
+        "national_id": {
+          "name": "national_id",
+          "columns": [
+            "national_id"
+          ]
+        },
+        "user_id": {
+          "name": "user_id",
+          "columns": [
+            "user_id"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "checkCNIC": {
+          "name": "checkCNIC",
+          "value": "regexp_like(`national_id`,_utf8mb4\\'^[0-9]{5}-[0-9]{7}-[0-9]{1}$\\')"
+        },
+        "checkPhone": {
+          "name": "checkPhone",
+          "value": "regexp_like(`phone`,_utf8mb4\\'^[0-9]{10}$\\')"
+        },
+        "checkEmail": {
+          "name": "checkEmail",
+          "value": "regexp_like(`email`,_utf8mb4\\'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\\\\\.[A-Za-z]{2,}$\\')"
+        }
+      }
+    },
+    "mudarabah_detail": {
+      "name": "mudarabah_detail",
+      "columns": {
+        "mudarabah_id": {
+          "autoincrement": true,
+          "name": "mudarabah_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "autoincrement": false,
+          "name": "account_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "profit_sharing_ratio": {
+          "autoincrement": false,
+          "name": "profit_sharing_ratio",
+          "type": "decimal(5,4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "investment_period_months": {
+          "autoincrement": false,
+          "name": "investment_period_months",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "compositePrimaryKeys": {
+        "mudarabah_detail_mudarabah_id": {
+          "name": "mudarabah_detail_mudarabah_id",
+          "columns": [
+            "mudarabah_id"
+          ]
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "mudarabah_detail_ibfk_1": {
+          "name": "mudarabah_detail_ibfk_1",
+          "tableFrom": "mudarabah_detail",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {
+        "account_id": {
+          "name": "account_id",
+          "columns": [
+            "account_id"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "checkProfitRatio": {
+          "name": "checkProfitRatio",
+          "value": "((`profit_sharing_ratio` > 0) and (`profit_sharing_ratio` < 1))"
+        }
+      }
+    },
+    "nbo_recommendation": {
+      "name": "nbo_recommendation",
+      "columns": {
+        "nbo_id": {
+          "autoincrement": true,
+          "name": "nbo_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "autoincrement": false,
+          "name": "customer_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_id": {
+          "autoincrement": false,
+          "name": "rule_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "default": "'presented'",
+          "autoincrement": false,
+          "name": "status",
+          "type": "enum('presented','accepted','dismissed')",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "offer_generated_at": {
+          "default": "(CURRENT_TIMESTAMP)",
+          "autoincrement": false,
+          "name": "offer_generated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "compositePrimaryKeys": {
+        "nbo_recommendation_nbo_id": {
+          "name": "nbo_recommendation_nbo_id",
+          "columns": [
+            "nbo_id"
+          ]
+        }
+      },
+      "indexes": {
+        "customer_id": {
+          "name": "customer_id",
+          "columns": [
+            "customer_id"
+          ],
+          "isUnique": false
+        },
+        "rule_id": {
+          "name": "rule_id",
+          "columns": [
+            "rule_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "nbo_recommendation_ibfk_1": {
+          "name": "nbo_recommendation_ibfk_1",
+          "tableFrom": "nbo_recommendation",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "customer_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        },
+        "nbo_recommendation_ibfk_2": {
+          "name": "nbo_recommendation_ibfk_2",
+          "tableFrom": "nbo_recommendation",
+          "tableTo": "nbo_rules",
+          "columnsFrom": [
+            "rule_id"
+          ],
+          "columnsTo": [
+            "rule_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "nbo_rules": {
+      "name": "nbo_rules",
+      "columns": {
+        "rule_id": {
+          "autoincrement": true,
+          "name": "rule_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger_rule": {
+          "autoincrement": false,
+          "name": "trigger_rule",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_id": {
+          "autoincrement": false,
+          "name": "product_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "compositePrimaryKeys": {
+        "nbo_rules_rule_id": {
+          "name": "nbo_rules_rule_id",
+          "columns": [
+            "rule_id"
+          ]
+        }
+      },
+      "indexes": {
+        "product_id": {
+          "name": "product_id",
+          "columns": [
+            "product_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "nbo_rules_ibfk_1": {
+          "name": "nbo_rules_ibfk_1",
+          "tableFrom": "nbo_rules",
+          "tableTo": "product_catalog",
+          "columnsFrom": [
+            "product_id"
+          ],
+          "columnsTo": [
+            "product_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {
+        "trigger_rule": {
+          "name": "trigger_rule",
+          "columns": [
+            "trigger_rule"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "product_catalog": {
+      "name": "product_catalog",
+      "columns": {
+        "product_id": {
+          "autoincrement": true,
+          "name": "product_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_name": {
+          "autoincrement": false,
+          "name": "product_name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "product_type": {
+          "autoincrement": false,
+          "name": "product_type",
+          "type": "enum('murabaha','ijarah','musharakah','istisna','salam')",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "default": 1,
+          "autoincrement": false,
+          "name": "is_active",
+          "type": "tinyint(1)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "compositePrimaryKeys": {
+        "product_catalog_product_id": {
+          "name": "product_catalog_product_id",
+          "columns": [
+            "product_id"
+          ]
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "uniqueConstraints": {
+        "product_name": {
+          "name": "product_name",
+          "columns": [
+            "product_name"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "purification_entry": {
+      "name": "purification_entry",
+      "columns": {
+        "entry_id": {
+          "autoincrement": true,
+          "name": "entry_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "txn_id": {
+          "autoincrement": false,
+          "name": "txn_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purified_amount": {
+          "autoincrement": false,
+          "name": "purified_amount",
+          "type": "decimal(15,2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purification_date": {
+          "autoincrement": false,
+          "name": "purification_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "compositePrimaryKeys": {
+        "purification_entry_entry_id": {
+          "name": "purification_entry_entry_id",
+          "columns": [
+            "entry_id"
+          ]
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "purification_entry_ibfk_1": {
+          "name": "purification_entry_ibfk_1",
+          "tableFrom": "purification_entry",
+          "tableTo": "transaction_ledger",
+          "columnsFrom": [
+            "txn_id"
+          ],
+          "columnsTo": [
+            "txn_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {
+        "txn_id": {
+          "name": "txn_id",
+          "columns": [
+            "txn_id"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "checkPurifiedAmount": {
+          "name": "checkPurifiedAmount",
+          "value": "(`purified_amount` > 0)"
+        }
+      }
+    },
+    "staff": {
+      "name": "staff",
+      "columns": {
+        "staff_id": {
+          "autoincrement": true,
+          "name": "staff_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "autoincrement": false,
+          "name": "user_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_name": {
+          "autoincrement": false,
+          "name": "full_name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "default": "(CURRENT_TIMESTAMP)",
+          "autoincrement": false,
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "compositePrimaryKeys": {
+        "staff_staff_id": {
+          "name": "staff_staff_id",
+          "columns": [
+            "staff_id"
+          ]
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "staff_ibfk_1": {
+          "name": "staff_ibfk_1",
+          "tableFrom": "staff",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {
+        "user_id": {
+          "name": "user_id",
+          "columns": [
+            "user_id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "transaction_ledger": {
+      "name": "transaction_ledger",
+      "columns": {
+        "txn_id": {
+          "autoincrement": true,
+          "name": "txn_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "autoincrement": false,
+          "name": "account_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "autoincrement": false,
+          "name": "amount",
+          "type": "decimal(15,2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "autoincrement": false,
+          "name": "direction",
+          "type": "enum('debit','credit')",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "txn_type": {
+          "autoincrement": false,
+          "name": "txn_type",
+          "type": "enum('deposit','withdrawal','transfer','purification','profit_distribution')",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_note": {
+          "autoincrement": false,
+          "name": "reference_note",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "default": "(CURRENT_TIMESTAMP)",
+          "autoincrement": false,
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "compositePrimaryKeys": {
+        "transaction_ledger_txn_id": {
+          "name": "transaction_ledger_txn_id",
+          "columns": [
+            "txn_id"
+          ]
+        }
+      },
+      "indexes": {
+        "account_id": {
+          "name": "account_id",
+          "columns": [
+            "account_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "transaction_ledger_ibfk_1": {
+          "name": "transaction_ledger_ibfk_1",
+          "tableFrom": "transaction_ledger",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "checkAmount": {
+          "name": "checkAmount",
+          "value": "(`amount` > 0)"
+        }
+      }
+    },
+    "txn_pair": {
+      "name": "txn_pair",
+      "columns": {
+        "pair_id": {
+          "autoincrement": true,
+          "name": "pair_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "debit_txn_id": {
+          "autoincrement": false,
+          "name": "debit_txn_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credit_txn_id": {
+          "autoincrement": false,
+          "name": "credit_txn_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pair_type": {
+          "autoincrement": false,
+          "name": "pair_type",
+          "type": "enum('transfer','profit_distribution','purification')",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "default": "(CURRENT_TIMESTAMP)",
+          "autoincrement": false,
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "compositePrimaryKeys": {
+        "txn_pair_pair_id": {
+          "name": "txn_pair_pair_id",
+          "columns": [
+            "pair_id"
+          ]
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "txn_pair_ibfk_1": {
+          "name": "txn_pair_ibfk_1",
+          "tableFrom": "txn_pair",
+          "tableTo": "transaction_ledger",
+          "columnsFrom": [
+            "debit_txn_id"
+          ],
+          "columnsTo": [
+            "txn_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        },
+        "txn_pair_ibfk_2": {
+          "name": "txn_pair_ibfk_2",
+          "tableFrom": "txn_pair",
+          "tableTo": "transaction_ledger",
+          "columnsFrom": [
+            "credit_txn_id"
+          ],
+          "columnsTo": [
+            "txn_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        }
+      },
+      "uniqueConstraints": {
+        "credit_txn_id": {
+          "name": "credit_txn_id",
+          "columns": [
+            "credit_txn_id"
+          ]
+        },
+        "debit_txn_id": {
+          "name": "debit_txn_id",
+          "columns": [
+            "debit_txn_id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "user_id": {
+          "autoincrement": true,
+          "name": "user_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "username": {
+          "autoincrement": false,
+          "name": "username",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "password_hash": {
+          "autoincrement": false,
+          "name": "password_hash",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "autoincrement": false,
+          "name": "role",
+          "type": "enum('customer','staff','admin')",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "default": "(CURRENT_TIMESTAMP)",
+          "autoincrement": false,
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "compositePrimaryKeys": {
+        "users_user_id": {
+          "name": "users_user_id",
+          "columns": [
+            "user_id"
+          ]
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "uniqueConstraints": {
+        "username": {
+          "name": "username",
+          "columns": [
+            "username"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    }
+  },
+  "views": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "tables": {
+      "accounts": {
+        "columns": {
+          "opened_at": {
+            "isDefaultAnExpression": true
+          }
+        }
+      },
+      "churn_signal": {
+        "columns": {
+          "last_computed_at": {
+            "isDefaultAnExpression": true
+          }
+        }
+      },
+      "customers": {
+        "columns": {
+          "created_at": {
+            "isDefaultAnExpression": true
+          }
+        }
+      },
+      "nbo_recommendation": {
+        "columns": {
+          "offer_generated_at": {
+            "isDefaultAnExpression": true
+          }
+        }
+      },
+      "staff": {
+        "columns": {
+          "created_at": {
+            "isDefaultAnExpression": true
+          }
+        }
+      },
+      "transaction_ledger": {
+        "columns": {
+          "created_at": {
+            "isDefaultAnExpression": true
+          }
+        }
+      },
+      "txn_pair": {
+        "columns": {
+          "created_at": {
+            "isDefaultAnExpression": true
+          }
+        }
+      },
+      "users": {
+        "columns": {
+          "created_at": {
+            "isDefaultAnExpression": true
+          }
+        }
+      }
+    },
+    "indexes": {}
+  }
+}
