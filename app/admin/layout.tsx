@@ -1,9 +1,9 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import ClientLayoutWrapper from "./components/ClientWrapperLayout";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import ClientWrapperLayout from "./components/ClientWrapperLayout";
 
-export default async function UserLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
 
   if (!session) {
@@ -11,9 +11,9 @@ export default async function UserLayout({ children }: { children: React.ReactNo
   }
 
   const role = String((session.user as { role?: string } | undefined)?.role ?? "").toLowerCase();
-  if (role === "admin") {
-    redirect("/admin/dashboard");
+  if (role !== "admin") {
+    redirect("/dashboard");
   }
 
-  return <ClientLayoutWrapper>{children}</ClientLayoutWrapper>;
+  return <ClientWrapperLayout>{children}</ClientWrapperLayout>;
 }

@@ -18,6 +18,7 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getTransactionHistory } from "@/app/(user)/lib/queries";
+import { useUser } from "@/app/(user)/context/UserContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ function Dropdown({ value, onChange, options }: {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[11rem] overflow-hidden">
+        <div className="absolute top-full left-0 mt-1.5 z-50 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-44 overflow-hidden">
           {options.map((opt) => (
             <button
               key={opt.value}
@@ -380,12 +381,9 @@ function LoadMore({ hasMore, total, onLoadMore, loading }: {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function TransactionHistoryPage({ userId }: { userId?: number }) {
+export default function TransactionHistoryPage() {
+  const { userId } = useUser();
   const searchParams = useSearchParams();
-  const queryUserId = Number(searchParams.get("userId"));
-  const resolvedUserId = Number.isFinite(userId) && Number(userId) > 0
-    ? Number(userId)
-    : (Number.isFinite(queryUserId) && queryUserId > 0 ? queryUserId : 1);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -415,7 +413,7 @@ export default function TransactionHistoryPage({ userId }: { userId?: number }) 
     }
 
     try {
-      const rows = await getTransactionHistory(resolvedUserId);
+      const rows = await getTransactionHistory(userId);
       
       const normalized: Transaction[] = rows.map((row: any) => ({
         transaction_id: row.txn_id,
@@ -464,7 +462,7 @@ export default function TransactionHistoryPage({ userId }: { userId?: number }) 
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [resolvedUserId, search, txnType, direction, dateRange]);
+  }, [userId, search, txnType, direction, dateRange]);
 
   // Reset and fetch when filters change
   useEffect(() => {

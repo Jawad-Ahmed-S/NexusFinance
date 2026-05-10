@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition, useRef } from "react";
+import React, { useState, useTransition, useRef, useEffect } from "react";
 import {
   ArrowLeft,
   Search,
@@ -14,7 +14,9 @@ import {
   Copy,
   X,
 } from "lucide-react";
+import { getAccountHolderByAccountNumber, handleTransfer, getCustomerId, getUserAccounts } from "../lib/queries";
 import Link from "next/link";
+import { useUser } from "@/app/(user)/context/UserContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,35 +37,31 @@ interface TransferState {
   referenceNo: string;
 }
 
+interface WadiahAccount {
+  account_id: string;
+  balance: number;
+  maskedId: string;
+}
+
 // ─── Mock: Lookup account holder by account number ────────────────────────────
 // Replace this with your actual server action / API call
-async function lookupAccount(accountNumber: string): Promise<AccountHolder | null> {
+async function lookupAccount(accountNumber: number): Promise<AccountHolder | null> {
   await new Promise((r) => setTimeout(r, 900)); // simulate network delay
+  const accountDetails = await getAccountHolderByAccountNumber(accountNumber);
 
-  // TODO: Replace with real DB query — e.g. db.select().from(accounts).where(eq(accounts.account_id, accountNumber)).limit(1)
-  const mockDB: Record<string, AccountHolder> = {
-    "10001": { name: "Ahmed Raza Khan", accountId: "10001", maskedId: "****0001", type: "WADIAH" },
-    "10002": { name: "Fatima Malik",    accountId: "10002", maskedId: "****0002", type: "WADIAH" },
-    "10003": { name: "Usman Tariq",     accountId: "10003", maskedId: "****0003", type: "CURRENT" },
-  };
-  return mockDB[accountNumber.trim()] ?? null;
+  return accountDetails;
 }
 
 // ─── Mock: Execute transfer ───────────────────────────────────────────────────
 async function executeTransfer(_payload: {
   fromAccountId: number;
-  toAccountId: string;
+  toAccountId: number;
   amount: number;
   note: string;
 }): Promise<{ referenceNo: string }> {
-  await new Promise((r) => setTimeout(r, 1200));
-
-  // TODO: Replace with real DB mutation:
-  //   - Deduct amount from sender's Wadiah account (where account_id = fromAccountId)
-  //   - Credit amount to recipient's account (where account_id = toAccountId)
-  //   - Insert a transaction record for both sides
-  //   - Return the generated reference number
-
+  
+  const {fromAccountId,toAccountId,amount} = _payload;
+  await handleTransfer(fromAccountId,toAccountId,amount);
   const ref = "TXN" + Date.now().toString().slice(-8).toUpperCase();
   return { referenceNo: ref };
 }
@@ -112,7 +110,7 @@ function EntryStep({
     if (!state.toAccountRaw.trim()) return;
     setLookupState("loading");
     startTransition(async () => {
-      const result = await lookupAccount(state.toAccountRaw);
+      const result = await lookupAccount(Number(state.toAccountRaw));
       if (result) {
         onChange({ recipient: result });
         setLookupState("found");
@@ -297,7 +295,7 @@ function ConfirmStep({
         </button>
         <button
           onClick={onConfirm}
-          className="flex-[2] py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-[0.99] transition-all"
+          className="flex-2 py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-[0.99] transition-all"
         >
           Confirm & Enter PIN
           <ChevronRight size={16} />
@@ -407,7 +405,7 @@ function PinStep({
         <button
           onClick={handleSubmit}
           disabled={pin.join("").length < 4 || isLoading}
-          className="flex-[2] py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-30 hover:bg-slate-800 active:scale-[0.99] transition-all"
+          className="flex-2 py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-30 hover:bg-slate-800 active:scale-[0.99] transition-all"
         >
           {isLoading ? <Loader2 size={16} className="animate-spin" /> : <><Send size={15} /> Send Money</>}
         </button>
@@ -521,29 +519,13 @@ function ErrorStep({ onRetry }: { onRetry: () => void }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-interface TransferPageProps {
-  // These would be passed from your server component wrapper or fetched
-  senderUserId: number;
-  senderWadiahAccount: {
-    account_id: string;
-    balance: number;
-    maskedId: string;
-  };
-}
-
-// Default export — this is the "use client" page shell
-// In your actual Next.js app, wrap this with a server component that fetches
-// the sender's Wadiah account and passes it as props.
-export default function TransferPage({
-  senderUserId = 1,
-  senderWadiahAccount = {
-    account_id: "20001",
-    balance: 125000,
-    maskedId: "****0001",
-  },
-}: Partial<TransferPageProps>) {
+export default function TransfersPage() {
+  const { userId } = useUser();
   const [step, setStep] = useState<Step>("entry");
   const [isPending, startTransition] = useTransition();
+  const [senderWadiahAccount, setSenderWadiahAccount] = useState<WadiahAccount | null>(null);
+  const [customerId, setCustomerId] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [transferState, setTransferState] = useState<TransferState>({
     toAccountRaw: "",
@@ -561,13 +543,48 @@ export default function TransferPage({
     setStep("entry");
   };
 
+  // Fetch user's account data on mount
+  useEffect(() => {
+    async function fetchAccountData() {
+      try {
+        setIsLoading(true);
+        const cId = await getCustomerId(userId);
+        if (!cId) throw new Error("Customer not found");
+
+        setCustomerId(cId);
+
+        const accounts = await getUserAccounts(cId);
+        const wadiahAccount = accounts?.find?.((a: any) => {
+          const type = String(a.account_type ?? "").toLowerCase();
+          return type === "wadi_ah" || type === "wadiah" || type === "current";
+        });
+
+        if (!wadiahAccount) throw new Error("No Wadiah account found");
+
+        const maskedId = `****${String(wadiahAccount.account_id).slice(-4)}`;
+        setSenderWadiahAccount({
+          account_id: String(wadiahAccount.account_id),
+          balance: Number(wadiahAccount.balance),
+          maskedId,
+        });
+      } catch (error) {
+        console.error("Error fetching account data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchAccountData();
+  }, [userId]);
+
   // Called after PIN confirmed — runs the actual transfer
   const handlePinConfirmed = (_pin: string) => {
+    if (!customerId) return;
     startTransition(async () => {
       try {
         const result = await executeTransfer({
-          fromAccountId: senderUserId,
-          toAccountId: transferState.toAccountRaw,
+          fromAccountId: customerId,
+          toAccountId: Number(transferState.toAccountRaw),
           amount: Number(transferState.amount),
           note: transferState.note,
         });
@@ -587,10 +604,34 @@ export default function TransferPage({
     error: "Failed",
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 size={32} className="animate-spin text-slate-400" />
+          <p className="text-sm font-bold text-slate-500">Loading account details…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!senderWadiahAccount) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg font-bold text-slate-900 mb-2">Account Not Found</p>
+          <p className="text-sm text-slate-500">Could not load your Wadiah account.</p>
+          <Link href=".." className="text-blue-600 hover:underline mt-4 inline-block">
+            Go back
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-lg mx-auto px-4 py-8">
-
         {/* ── Header ── */}
         <div className="flex items-center gap-4 mb-8">
           <Link
@@ -601,26 +642,22 @@ export default function TransferPage({
           </Link>
           <div className="flex-1">
             <h1 className="text-lg font-bold text-slate-900">{stepLabel[step]}</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Wadiah Fund Transfer
-            </p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Wadiah Fund Transfer</p>
           </div>
           {!["success", "error"].includes(step) && <StepDots current={step} />}
         </div>
 
-        {/* ── Sender Card (always visible except success/error) ── */}
+        {/* ── Sender Card ── */}
         {!["success", "error"].includes(step) && (
           <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 flex items-center justify-between shadow-sm">
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sending From</p>
-              <p className="text-sm font-bold text-slate-900 mt-0.5">
-                Wadiah {senderWadiahAccount?.maskedId}
-              </p>
+              <p className="text-sm font-bold text-slate-900 mt-0.5">Wadiah {senderWadiahAccount.maskedId}</p>
             </div>
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balance</p>
               <p className="text-sm font-bold text-slate-900 mt-0.5 tabular-nums">
-                PKR {senderWadiahAccount?.balance.toLocaleString()}
+                PKR {senderWadiahAccount.balance.toLocaleString()}
               </p>
             </div>
           </div>
@@ -628,8 +665,6 @@ export default function TransferPage({
 
         {/* ── Step Card ── */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-
-          {/* Loading overlay for PIN → processing */}
           {isPending && (
             <div className="flex flex-col items-center justify-center py-12 gap-4">
               <Loader2 size={32} className="animate-spin text-slate-400" />
@@ -641,7 +676,7 @@ export default function TransferPage({
             <EntryStep
               state={transferState}
               onChange={patch}
-              senderBalance={senderWadiahAccount?.balance ?? 0}
+              senderBalance={senderWadiahAccount.balance}
               onNext={() => setStep("confirm")}
             />
           )}
@@ -649,26 +684,19 @@ export default function TransferPage({
           {!isPending && step === "confirm" && (
             <ConfirmStep
               state={transferState}
-              senderAccount={{ maskedId: senderWadiahAccount?.maskedId ?? "" }}
+              senderAccount={{ maskedId: senderWadiahAccount.maskedId }}
               onBack={() => setStep("entry")}
               onConfirm={() => setStep("pin")}
             />
           )}
 
           {!isPending && step === "pin" && (
-            <PinStep
-              onBack={() => setStep("confirm")}
-              onSubmit={handlePinConfirmed}
-            />
+            <PinStep onBack={() => setStep("confirm")} onSubmit={handlePinConfirmed} />
           )}
 
-          {!isPending && step === "success" && (
-            <SuccessStep state={transferState} onDone={reset} />
-          )}
+          {!isPending && step === "success" && <SuccessStep state={transferState} onDone={reset} />}
 
-          {!isPending && step === "error" && (
-            <ErrorStep onRetry={reset} />
-          )}
+          {!isPending && step === "error" && <ErrorStep onRetry={reset} />}
         </div>
 
         {/* ── Footer note ── */}

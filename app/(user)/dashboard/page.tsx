@@ -99,25 +99,6 @@ export default async function DashboardPage() {
               </button>
             </div>
           )}
-
-          {/* Static Compliance Notice */}
-          <div className="border border-slate-200 rounded-2xl p-5 bg-white">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-              Shariah Compliance
-            </p>
-            <ul className="space-y-2">
-              {[
-                "All products certified Riba-free",
-                "Audited by Shariah Supervisory Board",
-                "SECP regulated Islamic window",
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-2 text-[10px] text-slate-600 font-medium">
-                  <span className="size-1.5 bg-green-500 rounded-full shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
         </aside>
       </div>
     </div>

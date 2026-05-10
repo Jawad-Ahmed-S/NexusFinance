@@ -36,6 +36,46 @@ export async function getUserAccounts(uId: number) {
   }
 }
 
+export async function getAccountHolderByAccountNumber(accountNumber: number): Promise<{ name: string; accountId: string; maskedId: string; type: "WADIAH" | "CURRENT" } | null> {
+  try {
+    const [rows]: any = await db.execute(sql`
+      SELECT 
+        a.account_id,
+        a.account_type,
+        c.full_name as name,
+        c.customer_id
+      FROM accounts a
+      JOIN customers c ON a.customer_id = c.customer_id
+      WHERE a.account_id = ${accountNumber}
+    `);
+    
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const account = rows[0];
+    const accountType = String(account.account_type ?? "WADIAH").toUpperCase();
+    const type: "WADIAH" | "CURRENT" = accountType.includes("WADIAH") ? "WADIAH" : "CURRENT";
+    
+    return {
+      name: account.name || "Unknown Account",
+      accountId: String(account.account_id),
+      maskedId: `****${String(account.account_id).slice(-4)}`,
+      type,
+    };
+  } catch (error) {
+    console.error("Error fetching account holder:", error);
+    return null;
+  }
+}
+
+export async function handleTransfer(fromAccountId:number,toAccountId:number,amount:number){
+  await db.execute(sql`CALL transfer_funds(${fromAccountId}, ${toAccountId}, ${amount}, @status, @message)`);
+  const result = await db.execute(sql`SELECT @status as status, @message as message`);
+  console.log(result);
+  
+}
+// export async function get
 interface Transaction {
   txn_id: number;
   account_id: number;

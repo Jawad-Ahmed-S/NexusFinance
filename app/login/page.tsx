@@ -1,13 +1,15 @@
 "use client"
-import { signIn } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
 import { useState } from "react";
 import { Landmark, ShieldCheck, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
+import StatusPopup from "../components/statuspopup";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [popup, setPopup] = useState<{ status: "success" | "error"; message: string } | null>(null);
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -17,14 +19,16 @@ export default function LoginPage() {
     const res = await signIn("credentials", {
       username,
       password,
-      callbackUrl: "/dashboard", // Login ke baad kahan jana hai
       redirect: false,
     });
 
     if (res?.error) {
       setError("Invalid credentials. Access denied.");
     } else {
-      router.push(res?.url || "/dashboard");
+      const session = await getSession();
+      const role = String((session?.user as { role?: string } | undefined)?.role ?? "").toLowerCase();
+      const destination = role === "admin" ? "/admin/dashboard" : "/dashboard";
+      router.push(destination);
     }
   };
 
@@ -50,7 +54,7 @@ export default function LoginPage() {
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Username</label>
             <input 
               type="username" required
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-slate-900 outline-none transition-all text-sm font-medium"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-slate-900 outline-none transition-all text-sm font-medium text-slate-900 placeholder:text-slate-400"
               placeholder="e.g. jawad@nexus.com"
               onChange={(e) => setUsername(e.target.value)}
             />
@@ -60,7 +64,7 @@ export default function LoginPage() {
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Password</label>
             <input 
               type="password" required
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-slate-900 outline-none transition-all text-sm font-medium"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-slate-900 outline-none transition-all text-sm font-medium text-slate-900 placeholder:text-slate-400"
               placeholder="••••••••"
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -71,13 +75,24 @@ export default function LoginPage() {
           </button>
 
           <div className="text-center pt-2">
-            <button type="button" onClick={() => alert("Please contact branch for password reset.")} className="text-[10px] font-bold text-slate-400 hover:text-slate-900 uppercase tracking-widest">
-              Forgot Credentials?
-            </button>
+          <button
+            type="button"
+            onClick={() => setPopup({ status: "success", message: "Please contact your branch for password reset." })}
+            className="text-[10px] font-bold text-slate-400 hover:text-slate-900 uppercase tracking-widest">
+            Forgot Credentials?
+          </button>
           </div>
         </form>
+        {popup && (
+          <StatusPopup
+            status={popup.status}
+            message={popup.message}
+            onClose={() => setPopup(null)}
+          />
+        )}
 
       </div>
     </div>
+    
   );
 }

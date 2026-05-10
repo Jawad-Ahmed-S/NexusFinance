@@ -22,6 +22,7 @@ export const authOptions: AuthOptions = {
             u.user_id,
             u.username,
             u.password_hash,
+            u.role,
             COALESCE(c.full_name, s.full_name, u.username) AS full_name
           FROM users u
           LEFT JOIN customers c ON c.user_id = u.user_id
@@ -42,7 +43,8 @@ export const authOptions: AuthOptions = {
           return { 
             id: user.user_id.toString(), 
             name: user.full_name,
-            username: user.username 
+            username: user.username,
+            role: user.role,
           };
         }
         return null;
@@ -50,16 +52,17 @@ export const authOptions: AuthOptions = {
     })
   ],
   callbacks: {
-    async jwt({token,user}){
-      if(user){
+    async jwt({ token, user }) {
+      if (user) {
         token.id = user.id;
+        token.role = (user as { role?: string }).role;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        // @ts-ignore
-        session.user.id = token.id; // User ID ko session mein daal rahe hain
+        session.user.id = String(token.id ?? "");
+        session.user.role = String(token.role ?? "");
       }
       return session;
     }
