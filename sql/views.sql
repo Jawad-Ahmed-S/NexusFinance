@@ -22,12 +22,9 @@ SELECT
   a.account_type,
   a.status,
   a.balance,
-  a.opened_at,
-  md.profit_sharing_ratio,
-  md.investment_period_months
+  a.opened_at
 FROM accounts a
-JOIN customers c ON a.customer_id = c.customer_id
-LEFT JOIN mudarabah_detail md ON a.account_id = md.account_id;
+JOIN customers c ON a.customer_id = c.customer_id;
 
 
 CREATE VIEW account_statement_view AS
@@ -77,11 +74,4 @@ WHERE tl.txn_type != 'transfer'
    
    select * from v_admin_transactions;
    
-   use nexusFinance;
-
- SELECT *
-      FROM customers WHERE user_id = 6;
-      
-      
-select * from users;
 

@@ -4,217 +4,182 @@ DELIMITER $$
 
 DROP PROCEDURE IF EXISTS transfer_funds$$
 
+
 CREATE PROCEDURE transfer_funds(
-    IN  p_from_account_id INT,
-    IN  p_to_account_id   INT,
-    IN  p_amount          DECIMAL(15,2),
-    OUT p_status          VARCHAR(10),
-    OUT p_message         VARCHAR(255)
+    IN p_from_account_id INT,
+    IN p_to_account_id   INT,
+    IN p_amount          DECIMAL(15,2)
 )
 BEGIN
+    DECLARE v_status VARCHAR(10);
+    DECLARE v_message VARCHAR(255);
 
-    DECLARE sender_balance  DECIMAL(15,2);
-    DECLARE sender_status   VARCHAR(10);
-    DECLARE receiver_status VARCHAR(10);
+    DECLARE v_sender_balance DECIMAL(15,2);
+    DECLARE v_sender_status VARCHAR(10);
+    DECLARE v_receiver_status VARCHAR(10);
+    DECLARE v_sender_type VARCHAR(20);
+    DECLARE v_receiver_type VARCHAR(20);
 
-    DECLARE sender_type   VARCHAR(20);
-    DECLARE receiver_type VARCHAR(20);
-
-    DECLARE sender_name   VARCHAR(100);
-    DECLARE receiver_name VARCHAR(100);
-
-    DECLARE sender_note   VARCHAR(255);
-    DECLARE receiver_note VARCHAR(255);
-
-    DECLARE v_debit_txn_id  INT;
-    DECLARE v_credit_txn_id INT;
-
-    DECLARE v_count INT DEFAULT 0;
+    DECLARE v_err_no INT;
+    DECLARE v_err_msg TEXT;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
-        SET p_status = 'ERROR';
-        SET p_message = 'Database error';
-    END;
 
-    SET p_status = 'START';
-    SET p_message = 'Procedure started';
+        GET DIAGNOSTICS CONDITION 1
+            v_err_no = MYSQL_ERRNO,
+            v_err_msg = MESSAGE_TEXT;
+
+        SELECT
+            'ERROR' AS status,
+            CONCAT(v_err_no, ' - ', v_err_msg) AS message;
+    END;
 
     START TRANSACTION;
 
     IF p_amount <= 0 THEN
         ROLLBACK;
-        SET p_status = 'ERROR';
-        SET p_message = 'Invalid amount';
+        SELECT 'ERROR' AS status, 'Invalid amount' AS message;
 
     ELSEIF p_from_account_id = p_to_account_id THEN
         ROLLBACK;
-        SET p_status = 'ERROR';
-        SET p_message = 'Same account';
+        SELECT 'ERROR' AS status, 'Same account transfer not allowed' AS message;
 
     ELSE
 
-        SELECT 1 FROM accounts
-        WHERE account_id = LEAST(p_from_account_id, p_to_account_id)
-        FOR UPDATE;
-
-        SELECT 1 FROM accounts
-        WHERE account_id = GREATEST(p_from_account_id, p_to_account_id)
-        FOR UPDATE;
-
-        SELECT COUNT(*) INTO v_count
+        -- lock accounts (deadlock-safe ordering)
+        SELECT balance, status, account_type
+        INTO v_sender_balance, v_sender_status, v_sender_type
         FROM accounts
-        WHERE account_id IN (p_from_account_id, p_to_account_id);
+        WHERE account_id = p_from_account_id
+        FOR UPDATE;
 
-        IF v_count < 2 THEN
+        SELECT status, account_type
+        INTO v_receiver_status, v_receiver_type
+        FROM accounts
+        WHERE account_id = p_to_account_id
+        FOR UPDATE;
+
+        IF v_sender_status != 'active' THEN
             ROLLBACK;
-            SET p_status = 'ERROR';
-            SET p_message = 'Account not found';
+            SELECT 'ERROR' AS status, 'Sender inactive' AS message;
+
+        ELSEIF v_receiver_status != 'active' THEN
+            ROLLBACK;
+            SELECT 'ERROR' AS status, 'Receiver inactive' AS message;
+
+        ELSEIF v_sender_type != 'wadi_ah' OR v_receiver_type != 'wadi_ah' THEN
+            ROLLBACK;
+            SELECT 'ERROR' AS status, 'Wadiah accounts only' AS message;
+
+        ELSEIF v_sender_balance < p_amount THEN
+            ROLLBACK;
+            SELECT 'ERROR' AS status, 'Insufficient funds' AS message;
 
         ELSE
 
-            SELECT balance, status, account_type
-            INTO sender_balance, sender_status, sender_type
-            FROM accounts
+            UPDATE accounts
+            SET balance = balance - p_amount
             WHERE account_id = p_from_account_id;
 
-            SELECT status, account_type
-            INTO receiver_status, receiver_type
-            FROM accounts
+            UPDATE accounts
+            SET balance = balance + p_amount
             WHERE account_id = p_to_account_id;
 
-            IF sender_status != 'active' THEN
-                ROLLBACK;
-                SET p_status = 'ERROR';
-                SET p_message = 'Sender inactive';
-
-            ELSEIF receiver_status != 'active' THEN
-                ROLLBACK;
-                SET p_status = 'ERROR';
-                SET p_message = 'Receiver inactive';
-
-            ELSEIF sender_type != 'wadi_ah' OR receiver_type != 'wadi_ah' THEN
-                ROLLBACK;
-                SET p_status = 'ERROR';
-                SET p_message = 'Wadiah only';
-
-            ELSEIF sender_balance < p_amount THEN
-                ROLLBACK;
-                SET p_status = 'ERROR';
-                SET p_message = 'Insufficient funds';
-
-            ELSE
-
-                SET sender_name = (
-                    SELECT IFNULL(full_name, 'Unknown')
-                    FROM customer_accounts_view
-                    WHERE account_id = p_from_account_id
-                    LIMIT 1
-                );
-
-                SET receiver_name = (
-                    SELECT IFNULL(full_name, 'Unknown')
-                    FROM customer_accounts_view
-                    WHERE account_id = p_to_account_id
-                    LIMIT 1
-                );
-
-                SET sender_note = CONCAT('Transfer to ', receiver_name);
-                SET receiver_note = CONCAT('Transfer from ', sender_name);
-
-                UPDATE accounts
-                SET balance = balance - p_amount
-                WHERE account_id = p_from_account_id;
-
-                UPDATE accounts
-                SET balance = balance + p_amount
-                WHERE account_id = p_to_account_id;
-
-                INSERT INTO transaction_ledger
+            INSERT INTO transaction_ledger
                 (account_id, amount, direction, txn_type, reference_note)
-                VALUES
-                (p_from_account_id, p_amount, 'debit', 'transfer', sender_note);
+            VALUES
+                (p_from_account_id, p_amount, 'debit', 'transfer', 'Transfer out');
 
-                SET v_debit_txn_id = LAST_INSERT_ID();
-
-                INSERT INTO transaction_ledger
+            INSERT INTO transaction_ledger
                 (account_id, amount, direction, txn_type, reference_note)
-                VALUES
-                (p_to_account_id, p_amount, 'credit', 'transfer', receiver_note);
+            VALUES
+                (p_to_account_id, p_amount, 'credit', 'transfer', 'Transfer in');
 
-                SET v_credit_txn_id = LAST_INSERT_ID();
+            COMMIT;
 
-                INSERT INTO txn_pair
-                (debit_txn_id, credit_txn_id, pair_type)
-                VALUES
-                (v_debit_txn_id, v_credit_txn_id, 'transfer');
+            SELECT 'SUCCESS' AS status, 'Transfer completed successfully' AS message;
 
-                COMMIT;
-
-                SET p_status = 'SUCCESS';
-                SET p_message = 'Transfer complete';
-
-            END IF;
         END IF;
     END IF;
 
 END$$
-
-DELIMITER ;
-
-
-
-DELIMITER $$
 
 -- ============================================================
 -- 1. create_mudarabah_cycle
 -- Opens a new cycle for the coming month
 -- Fails if a cycle already exists for that month
 -- ============================================================
-
-DROP PROCEDURE IF EXISTS create_mudarabah_cycle$$
-
 CREATE PROCEDURE create_mudarabah_cycle(
     IN  p_cycle_month   DATE,
     OUT p_status        VARCHAR(10),
     OUT p_message       VARCHAR(255)
 )
 BEGIN
-    DECLARE v_exists INT DEFAULT 0;
+    DECLARE v_err_no INT;
+    DECLARE v_err_msg TEXT;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
+        GET DIAGNOSTICS CONDITION 1
+            v_err_no = MYSQL_ERRNO,
+            v_err_msg = MESSAGE_TEXT;
+
         ROLLBACK;
-        SET p_status  = 'ERROR';
-        SET p_message = 'Database error occurred';
+
+        SET p_status = 'ERROR';
+        SET p_message = CONCAT(v_err_no, ' - ', v_err_msg);
     END;
 
-    -- normalize to first of month regardless of what date was passed
-    SET p_cycle_month = MAKEDATE(YEAR(p_cycle_month), 1) + INTERVAL (MONTH(p_cycle_month) - 1) MONTH;
+    -- normalize to first day of month
+    SET p_cycle_month = DATE_FORMAT(p_cycle_month, '%Y-%m-01');
 
-    -- check no cycle exists for this month
-    SELECT COUNT(*) INTO v_exists
+    START TRANSACTION;
+
+    -- lock possible duplicate row space (prevents race condition)
+    SELECT cycle_id
     FROM mudarabah_cycle
-    WHERE cycle_month = p_cycle_month;
+    WHERE cycle_month = p_cycle_month
+    FOR UPDATE;
 
-    IF v_exists > 0 THEN
+    -- check existence safely after lock
+    IF EXISTS (
+        SELECT 1
+        FROM mudarabah_cycle
+        WHERE cycle_month = p_cycle_month
+    ) THEN
+
+        ROLLBACK;
         SET p_status  = 'ERROR';
         SET p_message = 'Cycle already exists for this month';
-    ELSE
-        START TRANSACTION;
 
-        INSERT INTO mudarabah_cycle (cycle_month, pool_total, status, open_at)
-        VALUES (p_cycle_month, 0.00, 'open', NOW());
+    ELSE
+
+        INSERT INTO mudarabah_cycle (
+            cycle_month,
+            pool_total,
+            status,
+            open_at
+        )
+        VALUES (
+            p_cycle_month,
+            0.00,
+            'open',
+            NOW()
+        );
 
         COMMIT;
 
         SET p_status  = 'SUCCESS';
-        SET p_message = CONCAT('Cycle opened for ', DATE_FORMAT(p_cycle_month, '%M %Y'));
+        SET p_message = CONCAT(
+            'Cycle opened for ',
+            DATE_FORMAT(p_cycle_month, '%M %Y')
+        );
+
     END IF;
 
 END$$
-
 
 -- ============================================================
 -- 2. lock_mudarabah_cycle
@@ -224,7 +189,6 @@ END$$
 -- ============================================================
 
 DROP PROCEDURE IF EXISTS lock_mudarabah_cycle$$
-
 CREATE PROCEDURE lock_mudarabah_cycle(
     IN  p_cycle_month   DATE,
     OUT p_status        VARCHAR(10),
@@ -234,33 +198,47 @@ BEGIN
     DECLARE v_cycle_id      INT;
     DECLARE v_cycle_status  VARCHAR(10);
     DECLARE v_pool_total    DECIMAL(15,2) DEFAULT 0.00;
+
     DECLARE v_account_id    INT;
     DECLARE v_balance       DECIMAL(15,2);
     DECLARE v_share         DECIMAL(8,6);
-    DECLARE v_done          BOOLEAN DEFAULT FALSE;
+
+    DECLARE v_done BOOLEAN DEFAULT FALSE;
+
+    DECLARE v_err_no INT;
+    DECLARE v_err_msg TEXT;
 
     DECLARE cur_accounts CURSOR FOR
         SELECT a.account_id, a.balance
         FROM accounts a
         WHERE a.account_type = 'mudarabah'
           AND a.status = 'active'
-          AND a.balance > 0;
+          AND a.balance > 0
+        FOR UPDATE;
 
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = TRUE;
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
+        GET DIAGNOSTICS CONDITION 1
+            v_err_no = MYSQL_ERRNO,
+            v_err_msg = MESSAGE_TEXT;
+
         ROLLBACK;
-        SET p_status  = 'ERROR';
-        SET p_message = 'Database error occurred';
+
+        SET p_status = 'ERROR';
+        SET p_message = CONCAT(v_err_no, ' - ', v_err_msg);
     END;
 
-    SET p_cycle_month = MAKEDATE(YEAR(p_cycle_month), 1) + INTERVAL (MONTH(p_cycle_month) - 1) MONTH;
+    -- normalize month
+    SET p_cycle_month = DATE_FORMAT(p_cycle_month, '%Y-%m-01');
 
-    -- validate cycle exists and is open
-    SELECT cycle_id, status INTO v_cycle_id, v_cycle_status
+    -- prevent multiple rows issue
+    SELECT cycle_id, status
+    INTO v_cycle_id, v_cycle_status
     FROM mudarabah_cycle
-    WHERE cycle_month = p_cycle_month;
+    WHERE cycle_month = p_cycle_month
+    LIMIT 1;
 
     IF v_cycle_id IS NULL THEN
         SET p_status  = 'ERROR';
@@ -273,30 +251,39 @@ BEGIN
     ELSE
         START TRANSACTION;
 
-        -- compute pool total from all active mudarabah accounts
-        SELECT COALESCE(SUM(a.balance), 0) INTO v_pool_total
-        FROM accounts a
-        WHERE a.account_type = 'mudarabah'
-          AND a.status = 'active'
-          AND a.balance > 0;
+        -- lock cycle row (important for concurrency)
+        SELECT cycle_id
+        FROM mudarabah_cycle
+        WHERE cycle_id = v_cycle_id
+        FOR UPDATE;
+
+        -- compute pool total
+        SELECT COALESCE(SUM(balance), 0)
+        INTO v_pool_total
+        FROM accounts
+        WHERE account_type = 'mudarabah'
+          AND status = 'active'
+          AND balance > 0;
 
         IF v_pool_total = 0 THEN
             ROLLBACK;
             SET p_status  = 'ERROR';
-            SET p_message = 'Pool total is zero — no active Mudarabah accounts with balance';
+            SET p_message = 'Pool total is zero';
         ELSE
-            -- update cycle with pool total and freeze it
+
             UPDATE mudarabah_cycle
-            SET pool_total  = v_pool_total,
-                status      = 'frozen',
-                frozen_at   = NOW()
+            SET pool_total = v_pool_total,
+                status     = 'frozen',
+                frozen_at  = NOW()
             WHERE cycle_id = v_cycle_id;
 
-            -- snapshot each account balance and compute share
+            SET v_done = FALSE;  
+
             OPEN cur_accounts;
 
             read_loop: LOOP
                 FETCH cur_accounts INTO v_account_id, v_balance;
+
                 IF v_done THEN
                     LEAVE read_loop;
                 END IF;
@@ -322,6 +309,7 @@ BEGIN
 END$$
 
 
+
 -- ============================================================
 -- 3. settle_mudarabah_cycle
 -- Admin enters profit or loss percent
@@ -331,7 +319,6 @@ END$$
 -- ============================================================
 
 DROP PROCEDURE IF EXISTS settle_mudarabah_cycle$$
-
 CREATE PROCEDURE settle_mudarabah_cycle(
     IN  p_cycle_month           DATE,
     IN  p_profit_loss_percent   DECIMAL(8,4),
@@ -343,14 +330,20 @@ BEGIN
     DECLARE v_cycle_status      VARCHAR(10);
     DECLARE v_pool_total        DECIMAL(15,2);
     DECLARE v_pool_pl_amount    DECIMAL(15,2);
+
     DECLARE v_entry_id          INT;
     DECLARE v_account_id        INT;
     DECLARE v_share_percent     DECIMAL(8,6);
     DECLARE v_pl_amount         DECIMAL(15,2);
+
     DECLARE v_txn_type          VARCHAR(30);
     DECLARE v_direction         VARCHAR(10);
     DECLARE v_note              VARCHAR(255);
-    DECLARE v_done              BOOLEAN DEFAULT FALSE;
+
+    DECLARE v_done BOOLEAN DEFAULT FALSE;
+
+    DECLARE v_err_no INT;
+    DECLARE v_err_msg TEXT;
 
     DECLARE cur_entries CURSOR FOR
         SELECT entry_id, account_id, share_percent
@@ -362,42 +355,55 @@ BEGIN
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
+        GET DIAGNOSTICS CONDITION 1
+            v_err_no = MYSQL_ERRNO,
+            v_err_msg = MESSAGE_TEXT;
+
         ROLLBACK;
-        SET p_status  = 'ERROR';
-        SET p_message = 'Database error occurred';
+
+        SET p_status = 'ERROR';
+        SET p_message = CONCAT(v_err_no, ' - ', v_err_msg);
     END;
 
-    SET p_cycle_month = MAKEDATE(YEAR(p_cycle_month), 1) + INTERVAL (MONTH(p_cycle_month) - 1) MONTH;
+    -- normalize month
+    SET p_cycle_month = DATE_FORMAT(p_cycle_month, '%Y-%m-01');
 
-    -- validate cycle exists and is frozen
-    SELECT cycle_id, status, pool_total INTO v_cycle_id, v_cycle_status, v_pool_total
+    -- fetch cycle safely
+    SELECT cycle_id, status, pool_total
+    INTO v_cycle_id, v_cycle_status, v_pool_total
     FROM mudarabah_cycle
-    WHERE cycle_month = p_cycle_month;
+    WHERE cycle_month = p_cycle_month
+    LIMIT 1;
 
     IF v_cycle_id IS NULL THEN
         SET p_status  = 'ERROR';
-        SET p_message = 'No cycle found for this month';
+        SET p_message = 'No cycle found';
 
     ELSEIF v_cycle_status != 'frozen' THEN
         SET p_status  = 'ERROR';
-        SET p_message = CONCAT('Cycle must be frozen to settle. Current status: ', v_cycle_status);
+        SET p_message = CONCAT('Cycle must be frozen. Current: ', v_cycle_status);
 
     ELSE
         START TRANSACTION;
 
-        -- total pool profit or loss amount
+        -- lock cycle row (IMPORTANT)
+        SELECT cycle_id
+        FROM mudarabah_cycle
+        WHERE cycle_id = v_cycle_id
+        FOR UPDATE;
+
+        SET v_done = FALSE;
+
         SET v_pool_pl_amount = v_pool_total * (p_profit_loss_percent / 100);
 
-        -- determine txn_type and direction based on profit or loss
         IF p_profit_loss_percent >= 0 THEN
             SET v_txn_type  = 'profit_distribution';
             SET v_direction = 'credit';
         ELSE
-            SET v_txn_type  = 'profit_distribution';
+            SET v_txn_type  = 'loss_distribution';
             SET v_direction = 'debit';
         END IF;
 
-        -- update cycle record
         UPDATE mudarabah_cycle
         SET profit_loss_percent = p_profit_loss_percent,
             profit_loss_amount  = v_pool_pl_amount,
@@ -405,48 +411,38 @@ BEGIN
             settled_at          = NOW()
         WHERE cycle_id = v_cycle_id;
 
-        -- process each account entry
         OPEN cur_entries;
 
         entry_loop: LOOP
             FETCH cur_entries INTO v_entry_id, v_account_id, v_share_percent;
+
             IF v_done THEN
                 LEAVE entry_loop;
             END IF;
 
-            -- this account's profit or loss
             SET v_pl_amount = ABS(v_pool_pl_amount) * v_share_percent;
 
             SET v_note = CONCAT(
-                IF(p_profit_loss_percent >= 0, 'Mudarabah profit', 'Mudarabah loss'),
-                ' — ',
-                DATE_FORMAT(p_cycle_month, '%M %Y'),
-                ' (',
-                ROUND(p_profit_loss_percent, 2),
-                '%)'
+                IF(p_profit_loss_percent >= 0, 'Profit', 'Loss'),
+                ' Mudarabah - ',
+                DATE_FORMAT(p_cycle_month, '%M %Y')
             );
 
-            -- update account balance
-            IF p_profit_loss_percent >= 0 THEN
-                UPDATE accounts
-                SET balance = balance + v_pl_amount
-                WHERE account_id = v_account_id;
-            ELSE
-                UPDATE accounts
-                SET balance = GREATEST(balance - v_pl_amount, 0)
-                WHERE account_id = v_account_id;
-            END IF;
+            UPDATE accounts
+            SET balance = balance + (CASE 
+                                        WHEN p_profit_loss_percent >= 0 THEN v_pl_amount
+                                        ELSE -v_pl_amount
+                                     END)
+            WHERE account_id = v_account_id;
 
-            -- insert ledger entry
             INSERT INTO transaction_ledger
                 (account_id, amount, direction, txn_type, reference_note)
             VALUES
                 (v_account_id, v_pl_amount, v_direction, v_txn_type, v_note);
 
-            -- mark entry as settled with its amount
             UPDATE mudarabah_cycle_entry
-            SET profit_loss_amount  = v_pl_amount,
-                settled             = TRUE
+            SET profit_loss_amount = v_pl_amount,
+                settled = TRUE
             WHERE entry_id = v_entry_id;
 
         END LOOP;
@@ -455,15 +451,12 @@ BEGIN
 
         COMMIT;
 
-        SET p_status  = 'SUCCESS';
+        SET p_status = 'SUCCESS';
         SET p_message = CONCAT(
-            'Cycle settled. Pool ',
+            'Cycle settled. Total ',
             IF(p_profit_loss_percent >= 0, 'profit', 'loss'),
-            ': PKR ', ABS(v_pool_pl_amount),
-            ' distributed across all accounts'
+            ': ', ABS(v_pool_pl_amount)
         );
     END IF;
 
 END$$
-
-DELIMITER ;

@@ -36,32 +36,27 @@ export async function getUserAccounts(uId: number) {
   }
 }
 
-export async function getAccountHolderByAccountNumber(accountNumber: number): Promise<{ name: string; accountId: string; maskedId: string; type: "WADIAH" | "CURRENT" } | null> {
+export async function getAccountHolderByAccountNumber(accountNumber: number) {
   try {
     const [rows]: any = await db.execute(sql`
       SELECT 
         a.account_id,
         a.account_type,
-        c.full_name as name,
-        c.customer_id
+        c.full_name as name
       FROM accounts a
       JOIN customers c ON a.customer_id = c.customer_id
       WHERE a.account_id = ${accountNumber}
     `);
-    
-    if (rows.length === 0) {
-      return null;
-    }
+
+    if (rows.length === 0) return null;
 
     const account = rows[0];
-    const accountType = String(account.account_type ?? "WADIAH").toUpperCase();
-    const type: "WADIAH" | "CURRENT" = accountType.includes("WADIAH") ? "WADIAH" : "CURRENT";
-    
+
     return {
-      name: account.name || "Unknown Account",
+      name:      account.name || "Unknown",
       accountId: String(account.account_id),
-      maskedId: `****${String(account.account_id).slice(-4)}`,
-      type,
+      maskedId:  `****${String(account.account_id).slice(-4)}`,
+      type:      String(account.account_type).toLowerCase(), // raw from DB: "wadi_ah" or "mudarabah"
     };
   } catch (error) {
     console.error("Error fetching account holder:", error);
@@ -69,13 +64,32 @@ export async function getAccountHolderByAccountNumber(accountNumber: number): Pr
   }
 }
 
-export async function handleTransfer(fromAccountId:number,toAccountId:number,amount:number){
-  await db.execute(sql`CALL transfer_funds(${fromAccountId}, ${toAccountId}, ${amount}, @status, @message)`);
-  const result = await db.execute(sql`SELECT @status as status, @message as message`);
-  console.log(result);
-  
+export async function handleTransfer(
+  fromAccountId: number,
+  toAccountId: number,
+  amount: number
+): Promise<{ status: string; message: string }> {
+  try {
+    const [rows]: any = await db.execute(sql`
+      CALL transfer_funds(${fromAccountId}, ${toAccountId}, ${amount})
+    `);
+
+    const result = rows?.[0]?.[0];
+    console.log("TRANSFER RESULT:", result);
+
+    const status  = String(result?.status  ?? "ERROR");
+    const message = String(result?.message ?? "No response from server");
+
+    if (status.toLowerCase() !== "success") {
+      throw new Error(message);
+    }
+
+    return { status, message };
+  } catch (err: any) {
+    // re-throw so the page catch block gets the real message
+    throw new Error(err?.message ?? "Unexpected error");
+  }
 }
-// export async function get
 interface Transaction {
   txn_id: number;
   account_id: number;

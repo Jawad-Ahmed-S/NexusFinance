@@ -2,23 +2,20 @@
 
 import React, { useState, useTransition, useRef, useEffect } from "react";
 import {
-  ArrowLeft,
-  Search,
-  CheckCircle2,
-  AlertCircle,
-  Send,
-  ChevronRight,
-  Loader2,
-  ShieldCheck,
-  RefreshCw,
-  Copy,
-  X,
+  ArrowLeft, Search, CheckCircle2, AlertCircle, Send,
+  ChevronRight, Loader2, ShieldCheck, RefreshCw, Copy, X,
 } from "lucide-react";
-import { getAccountHolderByAccountNumber, handleTransfer, getCustomerId, getUserAccounts } from "../lib/queries";
 import Link from "next/link";
+import StatusPopup from "@/app/components/statuspopup";
+import {
+  getAccountHolderByAccountNumber,
+  handleTransfer,
+  getCustomerId,
+  getUserAccounts,
+} from "../lib/queries";
 import { useUser } from "@/app/(user)/context/UserContext";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────
 
 type Step = "entry" | "confirm" | "pin" | "success" | "error";
 
@@ -26,47 +23,32 @@ interface AccountHolder {
   name: string;
   accountId: string;
   maskedId: string;
-  type: "WADIAH" | "CURRENT";
+  type: string;
 }
 
 interface TransferState {
-  toAccountRaw: string;
-  amount: string;
-  note: string;
-  recipient: AccountHolder | null;
-  referenceNo: string;
+  toAccountRaw:  string;
+  amount:        string;
+  note:          string;
+  recipient:     AccountHolder | null;
+  referenceNo:   string;
+  errorMessage:  string;
 }
 
-interface WadiahAccount {
-  account_id: string;
-  balance: number;
-  maskedId: string;
+interface SenderAccount {
+  account_id: number;   // actual numeric id used in proc call
+  maskedId:   string;
+  balance:    number;
 }
 
-// ─── Mock: Lookup account holder by account number ────────────────────────────
-// Replace this with your actual server action / API call
-async function lookupAccount(accountNumber: number): Promise<AccountHolder | null> {
-  await new Promise((r) => setTimeout(r, 900)); // simulate network delay
-  const accountDetails = await getAccountHolderByAccountNumber(accountNumber);
+// ─── Helpers ─────────────────────────────────────────────────
 
-  return accountDetails;
-}
+const isWadiahType = (type: string) => {
+  const t = type.toLowerCase();
+  return t === "wadi_ah" || t === "wadiah" || t === "current";
+};
 
-// ─── Mock: Execute transfer ───────────────────────────────────────────────────
-async function executeTransfer(_payload: {
-  fromAccountId: number;
-  toAccountId: number;
-  amount: number;
-  note: string;
-}): Promise<{ referenceNo: string }> {
-  
-  const {fromAccountId,toAccountId,amount} = _payload;
-  await handleTransfer(fromAccountId,toAccountId,amount);
-  const ref = "TXN" + Date.now().toString().slice(-8).toUpperCase();
-  return { referenceNo: ref };
-}
-
-// ─── Sub-component: Step indicator ───────────────────────────────────────────
+// ─── Step Dots ───────────────────────────────────────────────
 
 function StepDots({ current }: { current: Step }) {
   const steps: Step[] = ["entry", "confirm", "pin"];
@@ -74,60 +56,76 @@ function StepDots({ current }: { current: Step }) {
   return (
     <div className="flex items-center gap-2">
       {steps.map((s, i) => (
-        <React.Fragment key={s}>
-          <div
-            className={`h-1.5 rounded-full transition-all duration-300 ${
-              i < idx
-                ? "w-6 bg-green-500"
-                : i === idx
-                ? "w-8 bg-slate-900"
-                : "w-4 bg-slate-200"
-            }`}
-          />
-        </React.Fragment>
+        <div
+          key={s}
+          className={`h-1.5 rounded-full transition-all duration-300 ${
+            i < idx  ? "w-6 bg-green-500"
+            : i === idx ? "w-8 bg-slate-900"
+            : "w-4 bg-slate-200"
+          }`}
+        />
       ))}
     </div>
   );
 }
 
-// ─── Sub-component: Step 1 — Account Entry ────────────────────────────────────
+// ─── Step 1: Entry ───────────────────────────────────────────
 
 function EntryStep({
   state,
   onChange,
-  senderBalance,
+  senderAccount,
   onNext,
 }: {
-  state: TransferState;
-  onChange: (patch: Partial<TransferState>) => void;
-  senderBalance: number;
-  onNext: (recipient: AccountHolder) => void;
+  state:         TransferState;
+  onChange:      (p: Partial<TransferState>) => void;
+  senderAccount: SenderAccount;
+  onNext:        () => void;
 }) {
-  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "notfound">("idle");
-  const [isPending, startTransition] = useTransition();
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "notfound" | "self" | "notWadiah">("idle");
+  const [, startTransition]           = useTransition();
 
   const handleLookup = () => {
-    if (!state.toAccountRaw.trim()) return;
+    const raw = state.toAccountRaw.trim();
+    if (!raw) return;
+
+    const toId = Number(raw);
+    if (isNaN(toId) || toId <= 0) { setLookupState("notfound"); return; }
+
+    // Self-transfer check
+    if (toId === senderAccount.account_id) {
+      setLookupState("self");
+      onChange({ recipient: null });
+      return;
+    }
+
     setLookupState("loading");
     startTransition(async () => {
-      const result = await lookupAccount(Number(state.toAccountRaw));
-      if (result) {
-        onChange({ recipient: result });
-        setLookupState("found");
-      } else {
+      const result = await getAccountHolderByAccountNumber(toId);
+      if (!result) {
         onChange({ recipient: null });
         setLookupState("notfound");
+        return;
       }
+      // Only allow Wadiah-to-Wadiah transfers
+      if (!isWadiahType(result.type)) {
+        onChange({ recipient: null });
+        setLookupState("notWadiah");
+        return;
+      }
+      onChange({ recipient: result });
+      setLookupState("found");
     });
   };
 
-  const amountNum = Number(state.amount);
-  const isAmountValid = amountNum > 0 && amountNum <= senderBalance;
-  const canProceed = state.recipient && isAmountValid;
+  const amountNum     = Number(state.amount);
+  const isAmountValid = amountNum > 0 && amountNum <= senderAccount.balance;
+  const canProceed    = state.recipient && isAmountValid && lookupState === "found";
 
   return (
     <div className="space-y-6">
-      {/* Account Number Lookup */}
+
+      {/* Recipient Lookup */}
       <div className="space-y-2">
         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
           Recipient Account Number
@@ -150,29 +148,51 @@ function EntryStep({
             disabled={!state.toAccountRaw.trim() || lookupState === "loading"}
             className="px-4 py-3 bg-slate-900 text-white rounded-xl disabled:opacity-40 hover:bg-slate-800 transition-all flex items-center gap-2 text-xs font-bold"
           >
-            {lookupState === "loading" ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Search size={14} />
-            )}
+            {lookupState === "loading"
+              ? <Loader2 size={14} className="animate-spin" />
+              : <Search size={14} />
+            }
             <span className="hidden sm:inline">Verify</span>
           </button>
         </div>
 
-        {/* Recipient result */}
+        {/* Lookup feedback */}
         {lookupState === "found" && state.recipient && (
           <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
             <CheckCircle2 size={16} className="text-green-600 shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-slate-900 truncate">{state.recipient.name}</p>
-              <p className="text-[10px] text-slate-400 font-mono">{state.recipient.maskedId} · {state.recipient.type}</p>
+              <p className="text-[10px] text-slate-400 font-mono">
+                {state.recipient.maskedId} · {state.recipient.type}
+              </p>
             </div>
           </div>
         )}
+
+        {lookupState === "self" && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <AlertCircle size={16} className="text-amber-600 shrink-0" />
+            <p className="text-sm font-medium text-amber-800">
+              You cannot transfer to your own account.
+            </p>
+          </div>
+        )}
+
+        {lookupState === "notWadiah" && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <AlertCircle size={16} className="text-amber-600 shrink-0" />
+            <p className="text-sm font-medium text-amber-800">
+              Only Wadiah accounts can receive transfers.
+            </p>
+          </div>
+        )}
+
         {lookupState === "notfound" && (
           <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
             <AlertCircle size={16} className="text-red-500 shrink-0" />
-            <p className="text-sm font-medium text-red-700">No Wadiah account found with this number.</p>
+            <p className="text-sm font-medium text-red-700">
+              No account found with this number.
+            </p>
           </div>
         )}
       </div>
@@ -183,12 +203,14 @@ function EntryStep({
           Amount
         </label>
         <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">PKR</span>
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+            PKR
+          </span>
           <input
             type="number"
             placeholder="0"
             min={1}
-            max={senderBalance}
+            max={senderAccount.balance}
             value={state.amount}
             onChange={(e) => onChange({ amount: e.target.value })}
             className="w-full border border-slate-200 rounded-xl pl-14 pr-4 py-3 text-lg font-bold text-slate-900 placeholder:text-slate-200 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition-all tabular-nums bg-white"
@@ -196,19 +218,19 @@ function EntryStep({
         </div>
         <div className="flex justify-between text-[10px] font-medium">
           <span className="text-slate-400">Available Balance</span>
-          <span className={amountNum > senderBalance ? "text-red-500 font-bold" : "text-slate-600 font-bold"}>
-            PKR {senderBalance.toLocaleString()}
+          <span className={amountNum > senderAccount.balance ? "text-red-500 font-bold" : "text-slate-600 font-bold"}>
+            PKR {senderAccount.balance.toLocaleString()}
           </span>
         </div>
-        {/* Quick amount presets */}
+        {/* Quick presets */}
         <div className="flex gap-2 flex-wrap">
-          {[1000, 5000, 10000, 25000].map((preset) => (
+          {[1000, 5000, 10000, 25000].map((p) => (
             <button
-              key={preset}
-              onClick={() => onChange({ amount: String(preset) })}
+              key={p}
+              onClick={() => onChange({ amount: String(p) })}
               className="text-[10px] font-bold px-3 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all"
             >
-              {preset.toLocaleString()}
+              {p.toLocaleString()}
             </button>
           ))}
         </div>
@@ -217,7 +239,8 @@ function EntryStep({
       {/* Note */}
       <div className="space-y-2">
         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-          Reference Note <span className="text-slate-300 font-medium normal-case">(optional)</span>
+          Reference Note{" "}
+          <span className="text-slate-300 font-medium normal-case">(optional)</span>
         </label>
         <input
           type="text"
@@ -229,20 +252,18 @@ function EntryStep({
         />
       </div>
 
-      {/* CTA */}
       <button
         disabled={!canProceed}
-        onClick={() => state.recipient && onNext(state.recipient)}
+        onClick={onNext}
         className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-30 hover:bg-slate-800 active:scale-[0.99] transition-all"
       >
-        Review Transfer
-        <ChevronRight size={16} />
+        Review Transfer <ChevronRight size={16} />
       </button>
     </div>
   );
 }
 
-// ─── Sub-component: Step 2 — Confirm ─────────────────────────────────────────
+// ─── Step 2: Confirm ─────────────────────────────────────────
 
 function ConfirmStep({
   state,
@@ -250,17 +271,17 @@ function ConfirmStep({
   onBack,
   onConfirm,
 }: {
-  state: TransferState;
-  senderAccount: { maskedId: string };
-  onBack: () => void;
-  onConfirm: () => void;
+  state:         TransferState;
+  senderAccount: SenderAccount;
+  onBack:        () => void;
+  onConfirm:     () => void;
 }) {
   const rows = [
-    { label: "From",      value: `Wadiah ${senderAccount.maskedId}` },
-    { label: "To",        value: `${state.recipient?.name} · ${state.recipient?.maskedId}` },
-    { label: "Amount",    value: `PKR ${Number(state.amount).toLocaleString()}`, highlight: true },
-    { label: "Note",      value: state.note || "—" },
-    { label: "Fee",       value: "PKR 0.00 · No Riba" },
+    { label: "From",   value: `Wadiah ${senderAccount.maskedId}` },
+    { label: "To",     value: `${state.recipient?.name} · ${state.recipient?.maskedId}` },
+    { label: "Amount", value: `PKR ${Number(state.amount).toLocaleString()}`, highlight: true },
+    { label: "Note",   value: state.note || "—" },
+    { label: "Fee",    value: "PKR 0.00 · No Riba" },
   ];
 
   return (
@@ -271,8 +292,12 @@ function ConfirmStep({
             key={label}
             className="flex justify-between items-center px-5 py-4 border-b border-slate-100 last:border-0"
           >
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
-            <span className={`text-sm font-bold text-right max-w-[60%] ${highlight ? "text-slate-900 text-base" : "text-slate-700"}`}>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              {label}
+            </span>
+            <span className={`text-sm font-bold text-right max-w-[60%] ${
+              highlight ? "text-slate-900 text-base" : "text-slate-700"
+            }`}>
               {value}
             </span>
           </div>
@@ -282,7 +307,7 @@ function ConfirmStep({
       <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
         <ShieldCheck size={16} className="text-amber-600 shrink-0 mt-0.5" />
         <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
-          This is an irreversible Shariah-compliant transfer. Please verify all details before continuing.
+          This is an irreversible Shariah-compliant transfer. Verify all details before continuing.
         </p>
       </div>
 
@@ -295,39 +320,34 @@ function ConfirmStep({
         </button>
         <button
           onClick={onConfirm}
-          className="flex-2 py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-[0.99] transition-all"
+          className="flex-[2] py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-[0.99] transition-all"
         >
-          Confirm & Enter PIN
-          <ChevronRight size={16} />
+          Confirm & Enter PIN <ChevronRight size={16} />
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Sub-component: Step 3 — PIN Entry ───────────────────────────────────────
+// ─── Step 3: PIN ─────────────────────────────────────────────
 
 function PinStep({
   onBack,
   onSubmit,
+  isPending,
 }: {
-  onBack: () => void;
-  onSubmit: (pin: string) => void;
+  onBack:    () => void;
+  onSubmit:  (pin: string) => void;
+  isPending: boolean;
 }) {
-  const [pin, setPin] = useState(["", "", "", ""]);
+  const [pin,   setPin]   = useState(["", "", "", ""]);
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const refs = [
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null),
-  ];
+  const refs = Array.from({ length: 4 }, () => useRef<HTMLInputElement>(null));
 
   const handleDigit = (idx: number, val: string) => {
     const digit = val.replace(/\D/g, "").slice(-1);
-    const next = [...pin];
-    next[idx] = digit;
+    const next  = [...pin];
+    next[idx]   = digit;
     setPin(next);
     setError("");
     if (digit && idx < 3) refs[idx + 1].current?.focus();
@@ -339,35 +359,23 @@ function PinStep({
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     const full = pin.join("");
     if (full.length < 4) { setError("Please enter your 4-digit PIN."); return; }
-
-    setIsLoading(true);
-    // TODO: Validate PIN against the user's stored hashed PIN in DB
-    // For now we simulate a brief check
-    await new Promise((r) => setTimeout(r, 600));
-    setIsLoading(false);
-
-    // Mock: any PIN works except 0000
-    if (full === "0000") {
-      setError("Incorrect PIN. Please try again.");
-      setPin(["", "", "", ""]);
-      refs[0].current?.focus();
-      return;
-    }
-
     onSubmit(full);
   };
 
   return (
     <div className="space-y-8">
       <div className="text-center space-y-1">
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Security Verification</p>
-        <p className="text-slate-600 text-sm">Enter your 4-digit transaction PIN to authorise.</p>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+          Security Verification
+        </p>
+        <p className="text-slate-600 text-sm">
+          Enter your 4-digit transaction PIN to authorise.
+        </p>
       </div>
 
-      {/* PIN inputs */}
       <div className="flex justify-center gap-4">
         {pin.map((d, i) => (
           <input
@@ -379,9 +387,11 @@ function PinStep({
             value={d}
             onChange={(e) => handleDigit(i, e.target.value)}
             onKeyDown={(e) => handleKey(i, e)}
+            disabled={isPending}
             className={`size-14 text-center text-xl font-bold rounded-2xl border-2 focus:outline-none transition-all bg-white
-              ${d ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-900"}
-              ${error ? "border-red-400" : "focus:border-slate-400"}
+              ${d        ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-900"}
+              ${error    ? "border-red-400"   : "focus:border-slate-400"}
+              ${isPending ? "opacity-50 cursor-not-allowed" : ""}
             `}
           />
         ))}
@@ -397,32 +407,29 @@ function PinStep({
       <div className="flex gap-3">
         <button
           onClick={onBack}
-          disabled={isLoading}
+          disabled={isPending}
           className="flex-1 py-3.5 border border-slate-200 text-slate-700 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all disabled:opacity-40"
         >
           Back
         </button>
         <button
           onClick={handleSubmit}
-          disabled={pin.join("").length < 4 || isLoading}
-          className="flex-2 py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-30 hover:bg-slate-800 active:scale-[0.99] transition-all"
+          disabled={pin.join("").length < 4 || isPending}
+          className="flex-[2] py-3.5 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-30 hover:bg-slate-800 active:scale-[0.99] transition-all"
         >
-          {isLoading ? <Loader2 size={16} className="animate-spin" /> : <><Send size={15} /> Send Money</>}
+          {isPending
+            ? <><Loader2 size={16} className="animate-spin" /> Processing…</>
+            : <><Send size={15} /> Send Money</>
+          }
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Sub-component: Step 4 — Success ─────────────────────────────────────────
+// ─── Step 4: Success ─────────────────────────────────────────
 
-function SuccessStep({
-  state,
-  onDone,
-}: {
-  state: TransferState;
-  onDone: () => void;
-}) {
+function SuccessStep({ state, onDone }: { state: TransferState; onDone: () => void }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -433,7 +440,6 @@ function SuccessStep({
 
   return (
     <div className="flex flex-col items-center text-center space-y-6 py-4">
-      {/* Icon */}
       <div className="size-20 rounded-full bg-green-50 border-2 border-green-200 flex items-center justify-center">
         <CheckCircle2 size={36} className="text-green-600" />
       </div>
@@ -446,7 +452,6 @@ function SuccessStep({
         </p>
       </div>
 
-      {/* Reference */}
       <div className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 flex items-center justify-between gap-3">
         <div className="text-left">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Reference No.</p>
@@ -456,16 +461,18 @@ function SuccessStep({
           onClick={handleCopy}
           className="shrink-0 p-2 rounded-lg hover:bg-slate-200 transition-all text-slate-400 hover:text-slate-700"
         >
-          {copied ? <CheckCircle2 size={16} className="text-green-500" /> : <Copy size={16} />}
+          {copied
+            ? <CheckCircle2 size={16} className="text-green-500" />
+            : <Copy size={16} />
+          }
         </button>
       </div>
 
-      {/* Breakdown */}
       <div className="w-full space-y-2 text-left">
         {[
-          { label: "To Account", value: state.recipient?.maskedId },
-          { label: "Date", value: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) },
-          { label: "Note", value: state.note || "—" },
+          { label: "To Account",    value: state.recipient?.maskedId },
+          { label: "Date",          value: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) },
+          { label: "Note",          value: state.note || "—" },
           { label: "Shariah Status", value: "Riba-free · Compliant" },
         ].map(({ label, value }) => (
           <div key={label} className="flex justify-between text-[11px]">
@@ -475,29 +482,27 @@ function SuccessStep({
         ))}
       </div>
 
-      {/* Actions */}
       <div className="w-full flex gap-3 pt-2">
         <button
           onClick={onDone}
           className="flex-1 py-3 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2 transition-all"
         >
-          <RefreshCw size={14} />
-          New Transfer
+          <RefreshCw size={14} /> New Transfer
         </button>
         <Link
-          href=".."
+          href="/dashboard"
           className="flex-1 py-3 bg-slate-900 text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all"
         >
-          Go to Dashboard
+          Dashboard
         </Link>
       </div>
     </div>
   );
 }
 
-// ─── Sub-component: Step 5 — Error ───────────────────────────────────────────
+// ─── Step 5: Error ───────────────────────────────────────────
 
-function ErrorStep({ onRetry }: { onRetry: () => void }) {
+function ErrorStep({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="flex flex-col items-center text-center space-y-6 py-4">
       <div className="size-20 rounded-full bg-red-50 border-2 border-red-200 flex items-center justify-center">
@@ -505,7 +510,9 @@ function ErrorStep({ onRetry }: { onRetry: () => void }) {
       </div>
       <div className="space-y-1">
         <h3 className="text-xl font-bold text-slate-900">Transfer Failed</h3>
-        <p className="text-sm text-slate-500">Something went wrong while processing your transfer. Please try again.</p>
+        <p className="text-sm text-slate-500">
+          {message || "Something went wrong. Please try again."}
+        </p>
       </div>
       <button
         onClick={onRetry}
@@ -517,154 +524,202 @@ function ErrorStep({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main Page ───────────────────────────────────────────────
 
 export default function TransfersPage() {
   const { userId } = useUser();
-  const [step, setStep] = useState<Step>("entry");
-  const [isPending, startTransition] = useTransition();
-  const [senderWadiahAccount, setSenderWadiahAccount] = useState<WadiahAccount | null>(null);
-  const [customerId, setCustomerId] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
 
+  const [step,          setStep]          = useState<Step>("entry");
+  const [isPending,     startTransition]  = useTransition();
+  const [senderAccount, setSenderAccount] = useState<SenderAccount | null>(null);
+  const [isLoading,     setIsLoading]     = useState(true);
+  const [popup, setPopup] = useState<{ status: "success" | "error"; message: string } | null>(null);
   const [transferState, setTransferState] = useState<TransferState>({
     toAccountRaw: "",
-    amount: "",
-    note: "",
-    recipient: null,
-    referenceNo: "",
+    amount:       "",
+    note:         "",
+    recipient:    null,
+    referenceNo:  "",
+    errorMessage: "",
   });
 
   const patch = (p: Partial<TransferState>) =>
     setTransferState((prev) => ({ ...prev, ...p }));
 
   const reset = () => {
-    setTransferState({ toAccountRaw: "", amount: "", note: "", recipient: null, referenceNo: "" });
+    setTransferState({
+      toAccountRaw: "",
+      amount:       "",
+      note:         "",
+      recipient:    null,
+      referenceNo:  "",
+      errorMessage: "",
+    });
     setStep("entry");
   };
 
-  // Fetch user's account data on mount
+  // ── Fetch sender's Wadiah account ────────────────────────────
+
   useEffect(() => {
-    async function fetchAccountData() {
+    if (!userId || isNaN(Number(userId)) || Number(userId) <= 0) return;
+
+    async function fetchAccount() {
+      setIsLoading(true);
       try {
-        setIsLoading(true);
-        const cId = await getCustomerId(userId);
-        if (!cId) throw new Error("Customer not found");
+        // Step 1: get customer_id from user_id
+        const cId = await getCustomerId(Number(userId));
+        if (!cId) throw new Error("Customer not found for userId: " + userId);
 
-        setCustomerId(cId);
-
+        // Step 2: get accounts using customer_id
         const accounts = await getUserAccounts(cId);
-        const wadiahAccount = accounts?.find?.((a: any) => {
-          const type = String(a.account_type ?? "").toLowerCase();
-          return type === "wadi_ah" || type === "wadiah" || type === "current";
-        });
 
-        if (!wadiahAccount) throw new Error("No Wadiah account found");
+        // Step 3: find the Wadiah account
+        const wadiah = (accounts ?? []).find((a: any) =>
+          isWadiahType(String(a.account_type ?? ""))
+        );
+        if (!wadiah) throw new Error("No Wadiah account found");
 
-        const maskedId = `****${String(wadiahAccount.account_id).slice(-4)}`;
-        setSenderWadiahAccount({
-          account_id: String(wadiahAccount.account_id),
-          balance: Number(wadiahAccount.balance),
-          maskedId,
+        setSenderAccount({
+          account_id: Number(wadiah.account_id), // numeric — used in proc call
+          maskedId:   `****${String(wadiah.account_id).slice(-4)}`,
+          balance:    Number(wadiah.balance),
         });
-      } catch (error) {
-        console.error("Error fetching account data:", error);
+      } catch (e) {
+        console.error("fetchAccount:", e);
+        setSenderAccount(null);
       } finally {
         setIsLoading(false);
       }
     }
 
-    fetchAccountData();
+    fetchAccount();
   }, [userId]);
 
-  // Called after PIN confirmed — runs the actual transfer
+  // ── Execute transfer after PIN ───────────────────────────────
+
   const handlePinConfirmed = (_pin: string) => {
-    if (!customerId) return;
+    if (!senderAccount) return;
+  
     startTransition(async () => {
       try {
-        const result = await executeTransfer({
-          fromAccountId: customerId,
-          toAccountId: Number(transferState.toAccountRaw),
-          amount: Number(transferState.amount),
-          note: transferState.note,
-        });
-        patch({ referenceNo: result.referenceNo });
+        await handleTransfer(
+          senderAccount.account_id,
+          Number(transferState.toAccountRaw),
+          Number(transferState.amount)
+        );
+  
+        const ref = "TXN" + Date.now().toString().slice(-8).toUpperCase();
+        patch({ referenceNo: ref, errorMessage: "" });
+        setPopup({ status: "success", message: "Transfer completed successfully." }); // ← add
         setStep("success");
-      } catch {
+      } catch (e: any) {
+        const msg = e?.message ?? "Transfer failed. Please try again.";
+        patch({ errorMessage: msg });
+        setPopup({ status: "error", message: msg }); // ← add
         setStep("error");
       }
     });
   };
 
   const stepLabel: Record<Step, string> = {
-    entry: "New Transfer",
+    entry:   "New Transfer",
     confirm: "Review Details",
-    pin: "Authorise",
+    pin:     "Authorise",
     success: "Completed",
-    error: "Failed",
+    error:   "Failed",
   };
+
+  // ── Loading state ────────────────────────────────────────────
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 size={32} className="animate-spin text-slate-400" />
+          <Loader2 size={28} className="animate-spin text-slate-400" />
           <p className="text-sm font-bold text-slate-500">Loading account details…</p>
         </div>
       </div>
     );
   }
 
-  if (!senderWadiahAccount) {
+  if (!senderAccount) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg font-bold text-slate-900 mb-2">Account Not Found</p>
-          <p className="text-sm text-slate-500">Could not load your Wadiah account.</p>
-          <Link href=".." className="text-blue-600 hover:underline mt-4 inline-block">
-            Go back
+      <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto">
+            <AlertCircle size={22} className="text-slate-400" />
+          </div>
+          <p className="text-base font-bold text-slate-900">No Wadiah Account Found</p>
+          <p className="text-sm text-slate-500">You need an active Wadiah account to make transfers.</p>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            <ArrowLeft size={12} /> Back to Dashboard
           </Link>
         </div>
       </div>
     );
   }
 
+  // ── Main UI ──────────────────────────────────────────────────
+
+  const showSenderCard = !["success", "error"].includes(step);
+
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[#FAFAFA]">
+      {popup && (
+      <StatusPopup
+        status={popup.status}
+        message={popup.message}
+        onClose={() => setPopup(null)}
+      />
+    )}
       <div className="max-w-lg mx-auto px-4 py-8">
-        {/* ── Header ── */}
+
+        {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <Link
-            href=".."
+            href="/dashboard"
             className="size-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-all shadow-sm"
           >
             <ArrowLeft size={16} />
           </Link>
           <div className="flex-1">
             <h1 className="text-lg font-bold text-slate-900">{stepLabel[step]}</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Wadiah Fund Transfer</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Wadiah Fund Transfer
+            </p>
           </div>
-          {!["success", "error"].includes(step) && <StepDots current={step} />}
+          {showSenderCard && <StepDots current={step} />}
         </div>
 
-        {/* ── Sender Card ── */}
-        {!["success", "error"].includes(step) && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 flex items-center justify-between shadow-sm">
+        {/* Sender card */}
+        {showSenderCard && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 flex items-center justify-between shadow-sm shadow-slate-200/50">
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sending From</p>
-              <p className="text-sm font-bold text-slate-900 mt-0.5">Wadiah {senderWadiahAccount.maskedId}</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Sending From
+              </p>
+              <p className="text-sm font-bold text-slate-900 mt-0.5">
+                Wadiah {senderAccount.maskedId}
+              </p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balance</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Balance
+              </p>
               <p className="text-sm font-bold text-slate-900 mt-0.5 tabular-nums">
-                PKR {senderWadiahAccount.balance.toLocaleString()}
+                PKR {senderAccount.balance.toLocaleString()}
               </p>
             </div>
           </div>
         )}
 
-        {/* ── Step Card ── */}
+        {/* Step card */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+
+          {/* Processing overlay */}
           {isPending && (
             <div className="flex flex-col items-center justify-center py-12 gap-4">
               <Loader2 size={32} className="animate-spin text-slate-400" />
@@ -676,7 +731,7 @@ export default function TransfersPage() {
             <EntryStep
               state={transferState}
               onChange={patch}
-              senderBalance={senderWadiahAccount.balance}
+              senderAccount={senderAccount}
               onNext={() => setStep("confirm")}
             />
           )}
@@ -684,23 +739,31 @@ export default function TransfersPage() {
           {!isPending && step === "confirm" && (
             <ConfirmStep
               state={transferState}
-              senderAccount={{ maskedId: senderWadiahAccount.maskedId }}
+              senderAccount={senderAccount}
               onBack={() => setStep("entry")}
               onConfirm={() => setStep("pin")}
             />
           )}
 
           {!isPending && step === "pin" && (
-            <PinStep onBack={() => setStep("confirm")} onSubmit={handlePinConfirmed} />
+            <PinStep
+              onBack={() => setStep("confirm")}
+              onSubmit={handlePinConfirmed}
+              isPending={isPending}
+            />
           )}
 
-          {!isPending && step === "success" && <SuccessStep state={transferState} onDone={reset} />}
+          {!isPending && step === "success" && (
+            <SuccessStep state={transferState} onDone={reset} />
+          )}
 
-          {!isPending && step === "error" && <ErrorStep onRetry={reset} />}
+          {!isPending && step === "error" && (
+            <ErrorStep message={transferState.errorMessage} onRetry={reset} />
+          )}
         </div>
 
-        {/* ── Footer note ── */}
-        {!["success", "error"].includes(step) && (
+        {/* Footer */}
+        {showSenderCard && (
           <p className="text-center text-[10px] text-slate-400 font-medium mt-6">
             Transfers are Shariah-compliant and processed instantly between Wadiah accounts.
           </p>
