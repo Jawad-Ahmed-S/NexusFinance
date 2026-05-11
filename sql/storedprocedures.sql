@@ -460,3 +460,55 @@ BEGIN
     END IF;
 
 END$$
+
+
+DROP PROCEDURE IF EXISTS create_customer_account;
+CREATE PROCEDURE create_customer_account(
+  IN  p_username        VARCHAR(100),
+  IN  p_password_hash   VARCHAR(255),
+  IN  p_full_name       VARCHAR(150),
+  IN  p_national_id     VARCHAR(20),
+  IN  p_phone           VARCHAR(20),
+  IN  p_email           VARCHAR(100),
+  IN  p_account_type    VARCHAR(20),
+  IN  p_initial_balance DECIMAL(15,2),
+  OUT p_status          VARCHAR(20),
+  OUT p_message         VARCHAR(255),
+  OUT p_user_id         INT,
+  OUT p_customer_id     INT,
+  OUT p_account_id      INT
+)
+BEGIN
+  DECLARE v_error_msg VARCHAR(255) DEFAULT '';
+
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    GET DIAGNOSTICS CONDITION 1
+      v_error_msg = MESSAGE_TEXT;  -- ← captures actual MySQL error
+    ROLLBACK;
+    SET p_status      = 'ERROR';
+    SET p_message     = v_error_msg;  -- ← returns real message not generic one
+    SET p_user_id     = NULL;
+    SET p_customer_id = NULL;
+    SET p_account_id  = NULL;
+  END;
+
+  START TRANSACTION;
+
+  INSERT INTO users (username, password_hash, role, created_at)
+  VALUES (p_username, p_password_hash, 'customer', NOW());
+  SET p_user_id = LAST_INSERT_ID();
+
+  INSERT INTO customers (user_id, full_name, national_id, phone, email, created_at)
+  VALUES (p_user_id, p_full_name, p_national_id, p_phone, p_email, NOW());
+  SET p_customer_id = LAST_INSERT_ID();
+
+  INSERT INTO accounts (customer_id, account_type, balance, status, opened_at)
+  VALUES (p_customer_id, p_account_type, p_initial_balance, 'active', NOW());
+  SET p_account_id = LAST_INSERT_ID();
+
+  COMMIT;
+
+  SET p_status  = 'SUCCESS';
+  SET p_message = 'Account created successfully';
+END;
