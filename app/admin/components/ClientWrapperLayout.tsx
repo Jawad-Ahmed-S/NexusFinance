@@ -7,7 +7,8 @@ import {LayoutDashboard,
   FileClock,
   ArrowLeftRight,
   ChartNoAxesCombined,
-  BriefcaseBusiness} from "lucide-react";
+  BriefcaseBusiness,
+  UserPlus} from "lucide-react";
 import Sidebar, { type NavItem } from "@/app/components/sidebar";
 import Header from "@/app/components/header";
 import { UserProvider } from "@/app/(user)/context/UserContext";
@@ -17,8 +18,7 @@ export default function ClientWrapperLayout({ children }: { children: React.Reac
   const adminNavItems: NavItem[] = [
     {label: "Dashboard",href: "/admin/dashboard",icon: LayoutDashboard},
     {label: "Account Management",href: "/admin/accounts",icon: Landmark},
-    {label: "Account Requests",href: "/admin/requests",icon: FileClock},
-    {label: "Customers",href: "/admin/customers",icon: UserRoundCog},
+    {label: "Account Creation",href: "/admin/accountCreation",icon: UserPlus},
     {label: "Transactions",href: "/admin/transactions",icon: ArrowLeftRight},
     {label: "Mudarabah Dashboard",href: "/admin/mudarabah",icon: BriefcaseBusiness},
     {label: "Churn Analytics",href: "/admin/churn-analyzer",icon: ChartNoAxesCombined},
