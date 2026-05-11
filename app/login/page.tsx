@@ -39,8 +39,8 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center size-14 bg-slate-900 rounded-2xl mb-4 shadow-xl">
             <Landmark className="text-white" size={28} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Nexus Islamic Bank</h1>
-          <p className="text-sm text-slate-500 mt-2 font-medium italic underline decoration-slate-200">Retail Banking Portal</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Nexus Finances</h1>
+          <p className="text-sm text-slate-500 mt-2 font-medium  decoration-slate-200">Islamic Banking Portal</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-5">
